@@ -4,7 +4,6 @@ import os
 import logging
 import datetime
 from typing import Dict, List, Optional, Tuple
-from pypushdeer import PushDeer
 
 def beijing_time_converter(timestamp):
     utc_dt = datetime.datetime.fromtimestamp(timestamp, tz=datetime.timezone.utc)
@@ -23,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 
 # ENVIRONMENT
-ENV_PUSH_KEY = "PUSHDEER_SENDKEY"
+ENV_PUSH_KEY = "BARK_URL"
 ENV_COOKIES = "GLADOS_COOKIES"
 ENV_EXCHANGE_PLAN = "GLADOS_EXCHANGE_PLAN"
 
@@ -79,7 +78,7 @@ def load_config() -> Tuple[str, List[str], str]:
 
 
     logger.info(f"共加载了 {len(cookies_list)} 个 Cookie 用于签到。")
-    logger.info(f"当前 {ENV_PUSH_KEY} {'已设置' if push_key_env else '未设置'}。")
+    logger.info(f"当前 {ENV_PUSH_KEY} (Bark 推送地址) {'已设置' if push_key_env else '未设置'}。")
     logger.info(f"当前 {ENV_EXCHANGE_PLAN}: {exchange_plan}。")
 
     return push_key, cookies_list, exchange_plan
@@ -204,6 +203,19 @@ def checkin_and_process(cookie: str, exchange_plan: str) -> Tuple[str, str, str,
     return status_msg, points_gained, remaining_days, remaining_points, exchange_msg
 
 
+def send_bark_notification(bark_url: str, title: str, content: str) -> None:
+    url = bark_url.rstrip('/')
+    payload = {"title": title, "body": content}
+    try:
+        response = requests.post(url, json=payload, timeout=10)
+        if response.ok:
+            logger.info("推送通知发送成功。")
+        else:
+            logger.error(f"推送通知发送失败，状态码 {response.status_code}。响应内容: {response.text}")
+    except requests.exceptions.RequestException as e:
+        logger.error(f"发送推送通知时发生网络错误: {e}")
+
+
 def format_push_content(results: List[Dict[str, str]]) -> Tuple[str, str]:
 
     success_count = sum(1 for r in results if "成功" in r['status'])
@@ -260,12 +272,7 @@ def main():
     if not push_key:
         logger.info(f"未设置 '{ENV_PUSH_KEY}'，跳过推送通知。")
     else:
-        try:
-            pushdeer = PushDeer(pushkey=push_key)
-            pushdeer.send_text(title, desp=content)
-            logger.info("推送通知发送成功。")
-        except Exception as e:
-            logger.error(f"发送推送通知失败: {e}")
+        send_bark_notification(push_key, title, content)
 
 
 if __name__ == '__main__':
